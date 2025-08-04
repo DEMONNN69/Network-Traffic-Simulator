@@ -1,77 +1,87 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect } from 'react';
 import NetworkVisualization from './components/NetworkVisualization';
 import StatsPanel from './components/StatsPanel';
-import './App.css';
+import io from 'socket.io-client';
 
 function App() {
   const [networkState, setNetworkState] = useState(null);
   const [isConnected, setIsConnected] = useState(false);
-  const [isRunning, setIsRunning] = useState(false);
+  const [socket, setSocket] = useState(null);
   const [currentTime, setCurrentTime] = useState('08:00');
 
-  // Fetch initial state
+  // Socket.IO connection
   useEffect(() => {
-    fetchNetworkState();
-    const interval = setInterval(fetchNetworkState, 2000); // Poll every 2 seconds
-    return () => clearInterval(interval);
+    const backendUrl = 'https://animated-capybara-gjrqgvpvr6q2pv97-5000.app.github.dev';
+    
+    const socketConnection = io(backendUrl, {
+      transports: ['websocket', 'polling'],
+      timeout: 20000,
+    });
+
+    socketConnection.on('connect', () => {
+      console.log('Connected to Flask backend');
+      setIsConnected(true);
+      fetchStatus();
+    });
+
+    socketConnection.on('disconnect', () => {
+      console.log('Disconnected from Flask backend');
+      setIsConnected(false);
+    });
+
+    socketConnection.on('simulation_update', (data) => {
+      console.log('Received simulation update:', data);
+      setNetworkState(data);
+      if (data.current_time) {
+        setCurrentTime(data.current_time);
+      }
+    });
+
+    socketConnection.on('connect_error', (error) => {
+      console.error('Socket connection error:', error);
+      setIsConnected(false);
+    });
+
+    setSocket(socketConnection);
+
+    return () => {
+      socketConnection.disconnect();
+    };
   }, []);
 
-  const fetchNetworkState = async () => {
+  const fetchStatus = async () => {
     try {
       const response = await fetch('https://animated-capybara-gjrqgvpvr6q2pv97-5000.app.github.dev/status');
-      if (response.ok) {
-        const data = await response.json();
-        setNetworkState(data);
-        setIsRunning(data.is_running || false);
-        setCurrentTime(data.current_time || '08:00');
-        setIsConnected(true);
-      } else {
-        setIsConnected(false);
+      const data = await response.json();
+      setNetworkState(data);
+      if (data.current_time) {
+        setCurrentTime(data.current_time);
       }
     } catch (error) {
-      console.error('Error fetching network state:', error);
-      setIsConnected(false);
-    }
-  };
-      
-  const startSimulation = async () => {
-    try {
-      const response = await fetch('https://animated-capybara-gjrqgvpvr6q2pv97-5000.app.github.dev/start', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' }
-      });
-      if (response.ok) {
-        fetchNetworkState();
-      }
-    } catch (error) {
-      console.error('Error starting simulation:', error);
+      console.error('Error fetching status:', error);
     }
   };
 
-  const stopSimulation = async () => {
-    try {
-      const response = await fetch('https://animated-capybara-gjrqgvpvr6q2pv97-5000.app.github.dev/stop', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' }
-      });
-      if (response.ok) {
-        fetchNetworkState();
-      }
-    } catch (error) {
-      console.error('Error stopping simulation:', error);
+  const startSimulation = () => {
+    if (socket) {
+      socket.emit('start_simulation');
+    }
+  };
+
+  const stopSimulation = () => {
+    if (socket) {
+      socket.emit('stop_simulation');
     }
   };
 
   const simulateStep = async () => {
     try {
-      const response = await fetch('https://animated-capybara-gjrqgvpvr6q2pv97-5000.app.github.dev/simulate', {
+      await fetch('https://animated-capybara-gjrqgvpvr6q2pv97-5000.app.github.dev/simulate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ time: currentTime })
       });
-      if (response.ok) {
-        fetchNetworkState();
-      }
+      fetchStatus();
     } catch (error) {
       console.error('Error simulating step:', error);
     }
@@ -79,89 +89,115 @@ function App() {
 
   const resetSimulation = async () => {
     try {
-      const response = await fetch('https://animated-capybara-gjrqgvpvr6q2pv97-5000.app.github.dev/reset', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' }
+      await fetch('https://animated-capybara-gjrqgvpvr6q2pv97-5000.app.github.dev/reset', {
+        method: 'POST'
       });
-      if (response.ok) {
-        fetchNetworkState();
-      }
+      fetchStatus();
     } catch (error) {
       console.error('Error resetting simulation:', error);
     }
   };
 
+  const changeTime = (newTime) => {
+    setCurrentTime(newTime);
+  };
+
   if (!networkState) {
     return (
-      <div className="app">
-        <div className="header">
-          <h1>Network Traffic Simulator</h1>
-          <div className="connection-status">
-            <span className={`status-indicator ${isConnected ? 'status-running' : 'status-stopped'}`}></span>
-            {isConnected ? 'Connected to Server' : 'Connecting to Server...'}
-          </div>
-        </div>
-        <div style={{ textAlign: 'center', padding: '50px' }}>
-          <h3>Loading network data...</h3>
+      <div className="min-h-screen bg-gray-100 flex items-center justify-center">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-blue-500 mx-auto mb-4"></div>
+          <h3 className="text-xl font-semibold text-gray-700">
+            {isConnected ? 'Loading network data...' : 'Connecting to server...'}
+          </h3>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="app">
-      <div className="header">
-        <h1>Network Traffic Simulator</h1>
-        <div className="connection-status">
-          <span className={`status-indicator ${isConnected ? 'status-running' : 'status-stopped'}`}></span>
-          {isConnected ? 'Connected to Server' : 'Connection Lost'}
-        </div>
-        <div className="time-display">
-          Current Time: <strong>{currentTime}</strong>
+    <div className="min-h-screen bg-gray-100">
+      {/* Header */}
+      <div className="bg-gradient-to-r from-blue-600 to-purple-700 text-white shadow-lg">
+        <div className="max-w-7xl mx-auto px-4 py-6">
+          <div className="flex justify-between items-center">
+            <h1 className="text-3xl font-bold">Network Traffic Simulator</h1>
+            <div className="flex items-center space-x-4">
+              <div className="text-lg font-medium">
+                Time: {currentTime}
+              </div>
+              <div className="flex items-center">
+                <div className={`w-3 h-3 rounded-full mr-2 ${isConnected ? 'bg-green-400' : 'bg-red-400'}`}></div>
+                <span className="text-sm">
+                  {isConnected ? 'Connected' : 'Disconnected'}
+                </span>
+              </div>
+            </div>
+          </div>
         </div>
       </div>
 
-      <div className="simulation-controls">
-        <button 
-          className="btn btn-primary" 
-          onClick={startSimulation}
-          disabled={!isConnected || isRunning}
-        >
-          Start Auto Simulation
-        </button>
-        <button 
-          className="btn btn-danger" 
-          onClick={stopSimulation}
-          disabled={!isConnected || !isRunning}
-        >
-          Stop Simulation
-        </button>
-        <button 
-          className="btn btn-secondary" 
-          onClick={simulateStep}
-          disabled={!isConnected || isRunning}
-        >
-          Simulate One Step
-        </button>
-        <button 
-          className="btn btn-warning" 
-          onClick={resetSimulation}
-          disabled={!isConnected}
-        >
-          Reset
-        </button>
-        <button 
-          className="btn btn-info" 
-          onClick={fetchNetworkState}
-          disabled={!isConnected}
-        >
-          Refresh
-        </button>
+      {/* Controls */}
+      <div className="bg-white shadow-sm border-b">
+        <div className="max-w-7xl mx-auto px-4 py-4">
+          <div className="flex flex-wrap justify-center space-x-2 space-y-2 md:space-y-0">
+            <button
+              onClick={startSimulation}
+              disabled={!isConnected || networkState.is_running}
+              className="px-4 py-2 bg-green-500 text-white rounded-lg hover:bg-green-600 disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors"
+            >
+              Start Auto Simulation
+            </button>
+            <button
+              onClick={stopSimulation}
+              disabled={!isConnected || !networkState.is_running}
+              className="px-4 py-2 bg-red-500 text-white rounded-lg hover:bg-red-600 disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors"
+            >
+              Stop Simulation
+            </button>
+            <button
+              onClick={simulateStep}
+              disabled={!isConnected}
+              className="px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors"
+            >
+              Simulate Step
+            </button>
+            <button
+              onClick={resetSimulation}
+              disabled={!isConnected}
+              className="px-4 py-2 bg-gray-500 text-white rounded-lg hover:bg-gray-600 disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors"
+            >
+              Reset
+            </button>
+          </div>
+          
+          {/* Time Selection */}
+          <div className="flex justify-center mt-4">
+            <div className="flex space-x-2">
+              {['08:00', '08:15', '08:30', '08:45'].map(time => (
+                <button
+                  key={time}
+                  onClick={() => changeTime(time)}
+                  className={`px-3 py-1 rounded text-sm transition-colors ${
+                    currentTime === time
+                      ? 'bg-blue-500 text-white'
+                      : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                  }`}
+                >
+                  {time}
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
       </div>
 
-      <div className="dashboard">
-        <NetworkVisualization networkState={networkState} />
-        <StatsPanel networkState={networkState} />
+      {/* Dashboard */}
+      <div className="max-w-7xl mx-auto px-4 py-6">
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          <NetworkVisualization networkState={networkState} />
+          <StatsPanel networkState={networkState} />
+        </div>
       </div>
     </div>
   );
