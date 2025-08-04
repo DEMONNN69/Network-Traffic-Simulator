@@ -1,0 +1,25 @@
+5. Code Commit and Deployment:
+o
+
+Commit the code to GitLab or GitHub as public repository. Share the repo link.
+
+o
+
+Deploy the application on a cloud platform like Heroku, Netlify, or GitHub Pages
+(for frontend) and Heroku or Railway (for backend) or any other choice of
+platform that you prefer.
+
+o
+
+Share the public deploy application URL
+
+o
+
+Set up any necessary environment variables and configurations for deployment.
+
+o
+
+Repo Link and Application URL shall be shared on HR@DigiPlusIT.com with your
+name, roll number and contact information.
+
+
